@@ -12,7 +12,7 @@ export async function POST(request: Request) {
 
         console.log(`Request for PR #${id}`, {
             description: description,
-            diffPreview: diff.substring(0, 100) + '...'
+            diffPreview: diff.length > 100 ? diff.substring(0, 100) + '...' : diff
           });
 
         if (!id || !description || !diff) {
