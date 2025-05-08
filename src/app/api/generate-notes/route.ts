@@ -15,7 +15,7 @@ export async function POST(request: Request) {
             diffPreview: diff.length > 100 ? diff.substring(0, 100) + '...' : diff
           });
 
-        if (!id || !description || !diff) {
+        if (id == null || description == null || diff == null) {
             return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
         }
 
