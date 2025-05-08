@@ -9,7 +9,11 @@ export async function POST(request: Request) {
 
     try{
         const { id, description, diff } = await request.json();
-        console.log('Received data:', { id, description, diff });
+
+        console.log(`Request for PR #${id}`, {
+            description: description,
+            diffPreview: diff.substring(0, 100) + '...'
+          });
 
         if (!id || !description || !diff) {
             return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
