@@ -6,7 +6,11 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "clean": "rm -rf .next && echo 'Next.js cache cleared'",
+    "clean:all": "rm -rf .next node_modules && echo 'Next.js cache and node_modules cleared'",
+    "dev:clean": "npm run clean && next dev",
+    "dev:clear-notes-cache": "node scripts/clear-notes-cache.js && npm run dev"
   },
   "dependencies": {
     "@octokit/rest": "^21.1.1",
