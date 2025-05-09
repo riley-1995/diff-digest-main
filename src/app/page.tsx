@@ -221,16 +221,48 @@ export default function Home() {
     }
   };
 
+  const [expandedNotes, setExpandedNotes] = useState<Record<string, boolean>>({});
+  const [allNotesExpanded, setAllNotesExpanded] = useState<boolean>(true);
+
+  const toggleNote = (id: string) => {
+    setExpandedNotes(prev => ({
+      ...prev,
+      [id]: !prev[id]
+    }));
+  };
+
+  const toggleAllNotes = () => {
+    const newExpandedState = !allNotesExpanded;
+    setAllNotesExpanded(newExpandedState);
+    
+    // Update all individual notes to match the global state
+    const updatedExpandedNotes: Record<string, boolean> = {};
+    diffs.forEach(diff => {
+      // Only include diffs that have notes
+      if (notes[diff.id]) {
+        updatedExpandedNotes[diff.id] = newExpandedState;
+      }
+    });
+    
+    setExpandedNotes(updatedExpandedNotes);
+  };
+
   const generateNotes = async (diffId: string, description: string, diff: string) => {
     // Check if we already have non-loading, error-free notes for this diff
     if (notes[diffId]?.data && !notes[diffId]?.loading && !notes[diffId]?.error) {
       console.log(`Using cached notes for PR #${diffId}`);
+      // Expand the notes when using cached values
+      setExpandedNotes(prev => ({
+        ...prev,
+        [diffId]: true
+      }));
       return; // Use cached notes instead of regenerating
     }
     
     // Reset JSON accumulator for this diff
     setJsonAccumulator(prev => ({...prev, [diffId]: ''}));
     
+    // Set to loading state and automatically expand
     setNotes(prev => ({
       ...prev,
       [diffId]: {
@@ -238,6 +270,12 @@ export default function Home() {
         error: null,
         data: { developerNote: '', marketingNote: '' }
       }
+    }));
+    
+    // Expand the notes to show loading state
+    setExpandedNotes(prev => ({
+      ...prev,
+      [diffId]: true
     }));
 
     try {
@@ -384,6 +422,28 @@ export default function Home() {
           >
             {processingAll ? "Generating All..." : "Generate All Notes"}
           </button>
+          
+          {/* Add the global Show/Hide All Notes button */}
+          {Object.keys(notes).length > 0 && (
+            <button
+              className="px-4 py-2 bg-purple-600 text-white rounded hover:bg-purple-700 transition-colors"
+              onClick={toggleAllNotes}
+            >
+              {allNotesExpanded ? "Hide All Notes" : "Show All Notes"}
+            </button>
+          )}
+          
+          {/* Add a Clear Cache button */}
+          <button
+            className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 transition-colors"
+            onClick={() => {
+              localStorage.removeItem('diffDigestNotes');
+              setNotes({});
+              alert('Notes cache cleared successfully');
+            }}
+          >
+            Clear Notes Cache
+          </button>
         </div>
 
         {/* Results Section */}
@@ -421,17 +481,40 @@ export default function Home() {
               {diffs.map((item) => (
                 <div key={item.id} className="border-b border-gray-200 dark:border-gray-700 pb-4 last:border-b-0">
                   <div className="flex items-start justify-between">
-                    <div>
-                      <a
-                        href={item.url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-blue-600 dark:text-blue-400 hover:underline font-medium"
-                      >
-                        PR #{item.id}:
-                      </a>
-                      <span className="ml-2">{item.description}</span>
+                    <div className="flex items-center">
+                      {/* Add dropdown arrow button if notes exist */}
+                      {notes[item.id] && !notes[item.id].loading && !notes[item.id].error && (
+                        <button 
+                          onClick={() => toggleNote(item.id)} 
+                          className="p-1 mr-2 text-gray-600 hover:text-gray-900 focus:outline-none"
+                          aria-label={expandedNotes[item.id] ? "Hide notes" : "Show notes"}
+                        >
+                          <svg 
+                            xmlns="http://www.w3.org/2000/svg" 
+                            width="16" 
+                            height="16" 
+                            fill="currentColor" 
+                            viewBox="0 0 16 16"
+                            className={`transition-transform ${expandedNotes[item.id] ? 'transform rotate-180' : ''}`}
+                          >
+                            <path d="M7.646 4.646a.5.5 0 0 1 .708 0l6 6a.5.5 0 0 1-.708.708L8 5.707l-5.646 5.647a.5.5 0 0 1-.708-.708l6-6z"/>
+                          </svg>
+                        </button>
+                      )}
+                      
+                      <div>
+                        <a
+                          href={item.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-blue-600 dark:text-blue-400 hover:underline font-medium"
+                        >
+                          PR #{item.id}:
+                        </a>
+                        <span className="ml-2">{item.description}</span>
+                      </div>
                     </div>
+                    
                     <button
                       onClick={() => generateNotes(item.id, item.description, item.diff)}
                       disabled={notes[item.id]?.loading}
@@ -441,8 +524,8 @@ export default function Home() {
                     </button>
                   </div>
 
-                  {/* Show this section after clicking the button */}
-                  {notes[item.id] && (
+                  {/* Show the notes section only if it's expanded or loading */}
+                  {notes[item.id] && (expandedNotes[item.id] || notes[item.id].loading) && (
                     <div className="mt-4 space-y-4">
                       {/* Show loading indicator during generation */}
                       {notes[item.id].loading && (
