@@ -1,6 +1,6 @@
 "use client"; // Mark as a Client Component
 
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 
 // Define the expected structure of a diff object
 interface DiffItem {
@@ -33,6 +33,14 @@ interface ApiResponse {
   perPage: number;
 }
 
+// Define the structure of the cache
+interface NotesCache {
+  [key: string]: {
+    timestamp: number;
+    data: GeneratedNotes;
+  };
+}
+
 export default function Home() {
   const [diffs, setDiffs] = useState<DiffItem[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(false);
@@ -45,6 +53,72 @@ export default function Home() {
 
   // Track JSON accumulation for each diff
   const [jsonAccumulator, setJsonAccumulator] = useState<Record<string, string>>({});
+  
+  // Cache expiration time (24 hours in milliseconds)
+  const CACHE_EXPIRATION = 24 * 60 * 60 * 1000;
+
+  // Load cached notes from localStorage when component mounts
+  useEffect(() => {
+    fetchDiffs(1);
+    loadNotesFromCache();
+  }, []);
+
+  // Define saveNotesToCache function with useCallback to prevent recreating on each render
+  const saveNotesToCache = useCallback(() => {
+    try {
+      const cacheData: NotesCache = {};
+      
+      // Only save successfully generated notes
+      Object.entries(notes).forEach(([diffId, noteData]) => {
+        if (!noteData.loading && !noteData.error && noteData.data) {
+          cacheData[diffId] = {
+            timestamp: Date.now(),
+            data: noteData.data
+          };
+        }
+      });
+      
+      localStorage.setItem('diffDigestNotes', JSON.stringify(cacheData));
+    } catch (err) {
+      console.error('Error saving notes to cache:', err);
+      // If there's an error saving to cache, just continue without caching
+    }
+  }, [notes]);
+  
+  // Save notes to cache whenever they change
+  useEffect(() => {
+    saveNotesToCache();
+  }, [saveNotesToCache]);
+
+  // Load notes from localStorage
+  const loadNotesFromCache = () => {
+    try {
+      const cachedNotesJSON = localStorage.getItem('diffDigestNotes');
+      if (cachedNotesJSON) {
+        const cachedNotes: NotesCache = JSON.parse(cachedNotesJSON);
+        const now = Date.now();
+        
+        // Create a new notes state object from the cache
+        const loadedNotes: NotesState = {};
+        
+        // Filter out expired cache entries and format for notes state
+        Object.entries(cachedNotes).forEach(([diffId, cacheEntry]) => {
+          if (now - cacheEntry.timestamp < CACHE_EXPIRATION) {
+            loadedNotes[diffId] = {
+              loading: false,
+              error: null,
+              data: cacheEntry.data
+            };
+          }
+        });
+        
+        setNotes(loadedNotes);
+      }
+    } catch (err) {
+      console.error('Error loading notes from cache:', err);
+      // Continue without cached notes if there's an error
+    }
+  };
 
   const fetchDiffs = async (page: number) => {
     setIsLoading(true);
@@ -80,7 +154,7 @@ export default function Home() {
 
   const handleFetchClick = () => {
     setDiffs([]);
-    setNotes({});
+    // Don't clear notes so they stay cached
     fetchDiffs(1);
   };
 
@@ -90,21 +164,29 @@ export default function Home() {
     }
   };
 
-  // Generate notes for all diffs
+  // Generate notes for all diffs - updated to skip already generated notes
   const generateAllNotes = async () => {
     if (processingAll || diffs.length === 0) return;
 
     setProcessingAll(true);
-
+    
     try {
       // Process each diff one by one
       for (const diff of diffs) {
-        // Skip diffs that are already being processed
-        if (!notes[diff.id]?.loading) {
-          await generateNotes(diff.id, diff.description, diff.diff);
-          // Add a small delay between requests to avoid overwhelming the server
-          await new Promise(resolve => setTimeout(resolve, 1000));
+        // Skip diffs that are already generated successfully
+        if (notes[diff.id]?.data && !notes[diff.id]?.loading && !notes[diff.id]?.error) {
+          console.log(`Skipping generation for PR #${diff.id} - already in cache`);
+          continue;
         }
+        
+        // Skip diffs that are currently being processed
+        if (notes[diff.id]?.loading) {
+          continue;
+        }
+        
+        await generateNotes(diff.id, diff.description, diff.diff);
+        // Add a small delay between requests to avoid overwhelming the server
+        await new Promise(resolve => setTimeout(resolve, 1000));
       }
     } finally {
       setProcessingAll(false);
@@ -112,9 +194,15 @@ export default function Home() {
   };
 
   const generateNotes = async (diffId: string, description: string, diff: string) => {
+    // Check if we already have non-loading, error-free notes for this diff
+    if (notes[diffId]?.data && !notes[diffId]?.loading && !notes[diffId]?.error) {
+      console.log(`Using cached notes for PR #${diffId}`);
+      return; // Use cached notes instead of regenerating
+    }
+    
     // Reset JSON accumulator for this diff
     setJsonAccumulator(prev => ({...prev, [diffId]: ''}));
-
+    
     setNotes(prev => ({
       ...prev,
       [diffId]: {
