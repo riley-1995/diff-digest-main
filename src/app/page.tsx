@@ -63,6 +63,34 @@ export default function Home() {
     loadNotesFromCache();
   }, []);
 
+  // Check cache control file on mount
+  useEffect(() => {
+    const checkCacheControlFile = async () => {
+      try {
+        // Fetch the cache control file with a cache-busting query parameter
+        const response = await fetch('/cache-control.json?' + new Date().getTime());
+        
+        if (response.ok) {
+          const cacheControl = await response.json();
+          
+          // Check if the file is requesting a cache clear
+          if (cacheControl.action === 'clear-notes-cache') {
+            // Clear localStorage
+            localStorage.removeItem('diffDigestNotes');
+            console.log('Notes cache cleared based on cache-control file');
+            setNotes({});
+          }
+        }
+      } catch (err) {
+        // If file doesn't exist or there's an error, do nothing
+        // This is normal when not using the clear-cache command
+        console.log('No cache control file found or error reading it');
+      }
+    };
+    
+    checkCacheControlFile();
+  }, []);
+
   // Define saveNotesToCache function with useCallback to prevent recreating on each render
   const saveNotesToCache = useCallback(() => {
     try {
